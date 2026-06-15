@@ -1,0 +1,58 @@
+name: build-check
+
+# PR gate: for each changed manifest, clone the package from the AUR, apply the
+# manifest's target version, and run the full packaging check (updpkgsums +
+# .SRCINFO sync + makepkg build + namcap). Make this a required status check on
+# the default branch via branch protection.
+on:
+  pull_request:
+    paths: [ "packages/**" ]
+  workflow_call: {}
+  workflow_dispatch:
+    inputs:
+      manifest:
+        description: "Manifest to verify (e.g. packages/foo.toml). Empty = all."
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    env:
+      NV_GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - name: Install tooling
+        run: pacman -Syu --noconfirm --needed pacman-contrib namcap git jq python sudo
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0   # need the base commit to diff changed manifests
+      - name: Prepare build user
+        run: ./scripts/setup-build-user.sh
+
+      - name: Determine manifests to verify
+        run: |
+          if [ -n "${{ github.event.inputs.manifest }}" ]; then
+            printf '%s\n' "${{ github.event.inputs.manifest }}" > /tmp/manifests
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            ./scripts/changed-manifests.sh '${{ github.event.pull_request.base.sha }}' HEAD > /tmp/manifests
+          else
+            ls packages/*.toml > /tmp/manifests 2>/dev/null || true
+          fi
+          echo "manifests to verify:"; cat /tmp/manifests || true
+
+      - name: Verify
+        run: |
+          if [ ! -s /tmp/manifests ]; then
+            echo "no package manifests changed; nothing to verify"
+            exit 0
+          fi
+          while read -r m; do
+            [ -n "$m" ] || continue
+            echo "::group::verify $m"
+            ./scripts/verify-manifest.sh "$m"
+            echo "::endgroup::"
+          done < /tmp/manifests

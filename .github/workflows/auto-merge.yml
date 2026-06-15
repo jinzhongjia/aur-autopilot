@@ -1,0 +1,26 @@
+name: auto-merge
+
+# Optional: when AUTO_MERGE=true, enable GitHub auto-merge on agent-opened update
+# PRs so they merge automatically once build-check passes. Requires:
+#   - repo setting "Allow auto-merge" enabled
+#   - branch protection requiring the build-check status check
+#   - a GH_PAT secret (agent-opened PRs only trigger this workflow when the PR was
+#     created with a PAT, not the default GITHUB_TOKEN)
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths: [ "packages/**" ]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  enable:
+    if: vars.AUTO_MERGE == 'true'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Enable auto-merge
+        run: gh pr merge --auto --squash "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}"

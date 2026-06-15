@@ -1,0 +1,26 @@
+name: bootstrap-labels
+
+# One-shot helper: create the labels this repo uses. Run it once from the
+# Actions tab (Run workflow) after generating from the template. Templates can't
+# pre-create labels, so this is the convenient way to set them up.
+on:
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  labels:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Create labels
+        run: |
+          gh label create "update-available" --color "0E8A16" \
+            --description "An upstream update is available and proposed" --force
+          gh label create "build-failed" --color "B60205" \
+            --description "Candidate packaging check failed" --force
+          gh label create "blocked-upstream" --color "FBCA04" \
+            --description "Upstream anomaly (e.g. version regression) needs manual handling" --force

@@ -1,0 +1,85 @@
+name: check-update
+
+# Daily upstream check. For every packages/*.toml: clone the package from the
+# AUR, run nvchecker, and if a newer upstream version exists (and no open issue
+# already tracks it), build + namcap a validated candidate and open an issue.
+on:
+  schedule:
+    - cron: "17 3 * * *"   # daily 03:17 UTC (off-the-hour to dodge cron congestion)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: check-update
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      count: ${{ steps.list.outputs.count }}
+      matrix: ${{ steps.list.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - id: list
+        run: ./scripts/list-packages.sh
+
+  check:
+    needs: discover
+    if: needs.discover.outputs.count != '0'
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PI_TRIGGER: ${{ vars.PI_TRIGGER }}
+      NV_GITHUB_TOKEN: ${{ github.token }}   # lift nvchecker github/git rate limits
+    steps:
+      - name: Install tooling
+        run: pacman -Syu --noconfirm --needed pacman-contrib namcap git jq python nvchecker sudo github-cli
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Prepare build user
+        run: ./scripts/setup-build-user.sh
+
+      - name: Clone AUR package
+        id: clone
+        run: echo "dir=$(./scripts/clone-aur.sh '${{ matrix.manifest }}' read)" >> "$GITHUB_OUTPUT"
+
+      - name: Detect upstream update
+        id: detect
+        run: ./scripts/detect-update.sh '${{ matrix.manifest }}' '${{ steps.clone.outputs.dir }}'
+
+      # --- Version regression (upstream older than packaged → possible epoch) ---
+      - name: Dedupe regression issue
+        id: rdedupe
+        if: steps.detect.outputs.regressed == 'true'
+        run: ./scripts/find-open-issue.sh '${{ steps.detect.outputs.name }}' '${{ steps.detect.outputs.latest }}' blocked-upstream
+      - name: Open regression issue
+        if: steps.detect.outputs.regressed == 'true' && steps.rdedupe.outputs.issue_exists == 'false'
+        run: |
+          gh issue create \
+            --title "Upstream regression: ${{ steps.detect.outputs.name }} ${{ steps.detect.outputs.latest }}" \
+            --label blocked-upstream \
+            --body "nvchecker reports upstream \`${{ steps.detect.outputs.latest }}\` which is **older** than the packaged \`${{ steps.detect.outputs.current }}\` (per \`vercmp\`). This usually needs an \`epoch\` bump or a source change — handle manually."
+
+      # --- Normal update path ---
+      - name: Dedupe update issue
+        id: dedupe
+        if: steps.detect.outputs.has_update == 'true'
+        run: ./scripts/find-open-issue.sh '${{ steps.detect.outputs.name }}' '${{ steps.detect.outputs.latest }}'
+      - name: Build candidate and open issue
+        if: steps.detect.outputs.has_update == 'true' && steps.dedupe.outputs.issue_exists == 'false'
+        run: |
+          ./scripts/open-update-issue.sh \
+            '${{ matrix.manifest }}' \
+            '${{ steps.clone.outputs.dir }}' \
+            '${{ steps.detect.outputs.current }}' \
+            '${{ steps.detect.outputs.latest }}'

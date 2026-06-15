@@ -1,0 +1,25 @@
+# This controller repo carries NO package build files. Everything below is
+# transient: created at runtime when a managed package is cloned from the AUR
+# and built for validation. None of it should ever be committed.
+
+# Runtime clone / build work directory used by scripts and CI
+.work/
+
+# Arch build artifacts (guard, in case a build is run from the repo root)
+*.pkg.tar.*
+*.zst
+*.deb
+*.sig
+src/
+pkg/
+
+# nvchecker transient state (we compare against the live AUR pkgver, not these)
+new_ver.json
+old_ver.json
+keyfile.toml
+
+# Editor / OS noise
+.DS_Store
+*.swp
+__pycache__/
+*.pyc

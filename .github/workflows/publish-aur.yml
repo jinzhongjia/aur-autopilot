@@ -1,0 +1,86 @@
+name: publish-aur
+
+# Push merged version bumps to the AUR. Fires when packages/*.toml changes land
+# on the default branch (i.e. an approved PR was merged). This is the ONLY
+# workflow that reads the AUR SSH key. For each changed manifest: clone the
+# package, apply the manifest version, re-check .SRCINFO sync, commit, and push
+# to the AUR. Then close the linked issue.
+on:
+  push:
+    branches: [ main, master ]
+    paths: [ "packages/**" ]
+  workflow_dispatch:
+    inputs:
+      manifest:
+        description: "Manifest to publish (e.g. packages/foo.toml). Empty = all."
+        required: false
+      dry_run:
+        description: "Build + show the staged diff without pushing to the AUR."
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: publish-aur
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    env:
+      NV_GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      AUR_USERNAME: ${{ vars.AUR_USERNAME }}
+      AUR_EMAIL: ${{ vars.AUR_EMAIL }}
+      DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) || 'false' }}
+    steps:
+      - name: Install tooling
+        run: pacman -Syu --noconfirm --needed pacman-contrib namcap git jq python openssh sudo github-cli
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+      - name: Prepare build user
+        run: ./scripts/setup-build-user.sh
+
+      - name: Configure AUR SSH
+        if: env.DRY_RUN != 'true'
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          install -dm700 ~/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          ssh-keyscan -t rsa,ecdsa,ed25519 aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host aur.archlinux.org\n  User aur\n  IdentityFile ~/.ssh/aur\n  IdentitiesOnly yes\n' > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
+      - name: Determine manifests to publish
+        run: |
+          if [ -n "${{ github.event.inputs.manifest }}" ]; then
+            printf '%s\n' "${{ github.event.inputs.manifest }}" > /tmp/manifests
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            ./scripts/changed-manifests.sh '${{ github.event.before }}' '${{ github.sha }}' > /tmp/manifests
+          else
+            ls packages/*.toml > /tmp/manifests 2>/dev/null || true
+          fi
+          echo "manifests to publish:"; cat /tmp/manifests || true
+
+      - name: Publish
+        run: |
+          if [ ! -s /tmp/manifests ]; then
+            echo "no package manifests changed; nothing to publish"
+            exit 0
+          fi
+          echo "DRY_RUN=$DRY_RUN"
+          while read -r m; do
+            [ -n "$m" ] || continue
+            echo "::group::publish $m"
+            ./scripts/publish-manifest.sh "$m"
+            echo "::endgroup::"
+          done < /tmp/manifests

@@ -1,0 +1,46 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Example package manifest for aur-autopilot.
+#
+# Copy this file to packages/<your-aur-pkgbase>.toml — ONE file per AUR package
+# you want this repo to keep up to date. Add as many as you like; the daily
+# checker iterates over every packages/*.toml.
+#
+# The controller repo intentionally stores NO PKGBUILD / build scripts. At
+# runtime each package is cloned fresh from the AUR, which is the single source
+# of truth for its PKGBUILD and (ideally) its .nvchecker.toml.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# REQUIRED. The AUR pkgbase. Clone URLs are derived from it:
+#   read  (detection / build-check): https://aur.archlinux.org/<name>.git
+#   write (publish):                 ssh://aur@aur.archlinux.org/<name>.git
+# The file name on disk is cosmetic; THIS field is authoritative.
+name = "cloudflare-warp-bin"
+
+# REQUIRED. The last approved / published upstream version.
+#  - It is the publish *target*: publish-aur sets pkgver to this and pushes.
+#  - It is the approval *ledger*: the approval PR bumps this value, so git
+#    history records every approved version.
+# On first setup, set it to the version currently published on the AUR.
+# Detection compares the *live* AUR pkgver against the latest upstream, so this
+# value does not need to be touched by hand afterwards.
+version = "2026.4.1350"
+
+# OPTIONAL. pkgrel to use when a new version is applied. Defaults to 1, which is
+# correct for a version bump. Only change for unusual packaging needs.
+# pkgrel = 1
+
+# OPTIONAL. Inline nvchecker source. ONLY needed when the package's AUR repo does
+# not already ship a .nvchecker.toml. When present, aur-autopilot writes a
+# temporary config of the form:
+#
+#     [<name>]
+#     <every key from this table>
+#
+# so put the nvchecker keys here WITHOUT a section header. See
+# https://nvchecker.readthedocs.io for all supported sources (github, git, pypi,
+# regex, cmd, ...).
+#
+# [nvchecker]
+# source = "regex"
+# url    = "https://pkg.cloudflareclient.com/dists/noble/main/binary-amd64/Packages"
+# regex  = 'Version: (\d+\.\d+\.\d+)'
