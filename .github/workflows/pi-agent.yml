@@ -39,7 +39,7 @@ jobs:
         with:
           node-version: 24
       - name: Pi agent
-        uses: shaftoe/pi-coding-agent-action@c0b46b02e6007006bd77484068fd9e66702cadf1 # v2.23.0
+        uses: shaftoe/pi-coding-agent-action@0698813906fb1f23425bd742510e3080d624840d # v2.27.0
         with:
           # GH_PAT (if set) makes agent-opened PRs trigger CI; falls back to GITHUB_TOKEN.
           github_token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
